@@ -1,0 +1,1355 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>岩石與礦物大富翁</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Microsoft JhengHei','Arial',sans-serif; background: linear-gradient(135deg,#1a1a2e 0%,#16213e 50%,#0f3460 100%); min-height:100vh; color:#eee; }
+
+/* ── SETUP ── */
+#setup-screen { display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:100vh; gap:20px; padding:20px; }
+#setup-screen h1 { font-size:2.6rem; text-align:center; background:linear-gradient(135deg,#f5af19,#f12711); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+.setup-card { background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.15); border-radius:16px; padding:28px 36px; width:480px; max-width:95vw; }
+.setup-card h2 { margin-bottom:16px; font-size:1.1rem; color:#f5af19; }
+.player-count-btns { display:flex; gap:10px; margin-bottom:18px; }
+.cnt-btn { flex:1; padding:10px; border:2px solid #555; background:transparent; color:#eee; border-radius:8px; font-size:1rem; cursor:pointer; transition:.2s; }
+.cnt-btn.active,.cnt-btn:hover { border-color:#f5af19; background:rgba(245,175,25,.15); color:#f5af19; }
+.player-inputs { display:flex; flex-direction:column; gap:8px; }
+.player-row { display:flex; align-items:center; gap:8px; }
+.pcolor { width:18px; height:18px; border-radius:50%; flex-shrink:0; }
+.player-row input { flex:1; padding:7px 10px; background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.2); border-radius:8px; color:#eee; font-size:.9rem; }
+.player-row input:focus { outline:none; border-color:#f5af19; }
+.ai-toggle { padding:5px 10px; background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.2); border-radius:6px; color:#aaa; cursor:pointer; font-size:.8rem; white-space:nowrap; }
+.ai-toggle.is-ai { background:rgba(52,152,219,.2); border-color:#3498db; color:#3498db; }
+.start-btn { width:100%; padding:13px; background:linear-gradient(135deg,#f5af19,#f12711); border:none; border-radius:10px; color:#fff; font-size:1.1rem; font-weight:bold; cursor:pointer; margin-top:12px; transition:.15s; }
+.start-btn:hover { transform:translateY(-2px); }
+
+/* ── GAME LAYOUT ── */
+#game-screen { display:none; flex-direction:row; gap:14px; padding:10px; align-items:flex-start; justify-content:center; min-height:100vh; }
+
+/* ── BOARD ── */
+.board {
+  display:grid;
+  grid-template-columns:88px repeat(9,52px) 88px;
+  grid-template-rows:88px repeat(9,52px) 88px;
+  border:3px solid #8B6914;
+  background:#c8e6c9;
+  width:704px; height:704px;
+  position:relative; flex-shrink:0;
+}
+.board-center {
+  grid-row:2/11; grid-column:2/11;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  background:linear-gradient(135deg,#e8f5e9,#c8e6c9);
+  gap:6px; padding:8px;
+}
+.board-center h2 { font-size:1.55rem; color:#2d6a2d; font-weight:900; letter-spacing:3px; }
+.board-center h3 { font-size:1rem; color:#4a9e4a; }
+.center-legend { display:flex; flex-wrap:wrap; gap:5px; justify-content:center; margin-top:6px; }
+.legend-item { display:flex; align-items:center; gap:3px; font-size:.65rem; color:#555; }
+.legend-dot { width:11px; height:11px; border-radius:3px; }
+
+/* Cells */
+.cell { border:1px solid #aaa; background:#fff; cursor:pointer; position:relative; overflow:hidden;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  transition:filter .15s; padding:2px; }
+.cell:hover { filter:brightness(.9); z-index:2; }
+.cell.highlight { box-shadow:0 0 0 3px #FFD700 inset; }
+
+.color-bar { width:100%; flex-shrink:0; }
+.cell-bottom .color-bar, .cell-top .color-bar { height:13px; }
+.cell-left .color-bar, .cell-right .color-bar { width:13px; height:100%; }
+
+.cell-name { font-size:7px; font-weight:bold; color:#111; text-align:center; line-height:1.2; }
+.cell-price { font-size:6px; color:#555; text-align:center; }
+.cell-emoji { font-size:11px; line-height:1; }
+.cell.corner { font-size:9px; font-weight:bold; color:#333; text-align:center; }
+.corner-label { font-size:8px; line-height:1.3; }
+
+/* Side cell content rotation */
+.cell-left  { flex-direction:row; }
+.cell-left .cell-content  { writing-mode:vertical-rl; transform:rotate(180deg); display:flex; flex-direction:column; align-items:center; gap:1px; flex:1; justify-content:center; }
+.cell-right { flex-direction:row-reverse; }
+.cell-right .cell-content { writing-mode:vertical-rl; display:flex; flex-direction:column; align-items:center; gap:1px; flex:1; justify-content:center; }
+.cell-top { flex-direction:column-reverse; }
+.cell-top .cell-content { display:flex; flex-direction:column; align-items:center; transform:rotate(180deg); flex:1; gap:1px; justify-content:center; }
+.cell-bottom .cell-content { display:flex; flex-direction:column; align-items:center; flex:1; gap:1px; justify-content:center; }
+
+/* Group colors */
+[data-group="brown"]    .color-bar { background:#8B4513; }
+[data-group="lightblue"].color-bar { background:#87CEEB; }
+[data-group="pink"]     .color-bar { background:#FF69B4; }
+[data-group="orange"]   .color-bar { background:#FFA500; }
+[data-group="red"]      .color-bar { background:#CC0000; }
+[data-group="yellow"]   .color-bar { background:#FFD700; }
+[data-group="green"]    .color-bar { background:#228B22; }
+[data-group="darkblue"] .color-bar { background:#00008B; }
+
+/* Owner tint */
+.cell.owned-0 { background:rgba(231,76,60,.13); }
+.cell.owned-1 { background:rgba(52,152,219,.13); }
+.cell.owned-2 { background:rgba(46,204,113,.13); }
+.cell.owned-3 { background:rgba(243,156,18,.13); }
+.cell.mortgaged { background:rgba(150,150,150,.25) !important; }
+
+/* Tokens */
+.tokens-container { position:absolute; bottom:2px; right:2px; display:flex; flex-wrap:wrap; gap:1px; max-width:26px; }
+.token { width:10px; height:10px; border-radius:50%; border:1.5px solid rgba(255,255,255,.85); }
+
+/* Buildings */
+.buildings { position:absolute; top:2px; left:2px; display:flex; gap:1px; flex-wrap:wrap; }
+.house { width:6px; height:6px; background:#2ecc71; border-radius:1px; }
+.hotel { width:10px; height:6px; background:#e74c3c; border-radius:1px; }
+
+/* ── SIDE PANEL ── */
+.side-panel { width:295px; flex-shrink:0; display:flex; flex-direction:column; gap:9px; max-height:100vh; overflow-y:auto; padding-bottom:20px; }
+.panel-section { background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.12); border-radius:12px; padding:12px; }
+.panel-section h3 { font-size:.85rem; color:#f5af19; margin-bottom:9px; border-bottom:1px solid rgba(255,255,255,.1); padding-bottom:5px; }
+
+/* Player cards */
+.player-card { display:flex; align-items:center; gap:7px; padding:6px 8px; border-radius:8px; background:rgba(255,255,255,.05); border:1px solid transparent; margin-bottom:4px; }
+.player-card.active-player { border-color:#f5af19; background:rgba(245,175,25,.1); }
+.player-card.bankrupt { opacity:.35; }
+.player-dot { width:18px; height:18px; border-radius:50%; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:9px; color:#fff; font-weight:bold; }
+.player-info { flex:1; }
+.player-name-row { font-size:.82rem; font-weight:bold; display:flex; align-items:center; gap:3px; flex-wrap:wrap; }
+.player-money { font-size:.78rem; color:#2ecc71; }
+.player-pos { font-size:.68rem; color:#aaa; }
+.pbadge { font-size:.62rem; padding:1px 5px; border-radius:4px; }
+.badge-ai   { background:rgba(52,152,219,.3); color:#3498db; }
+.badge-jail { background:rgba(231,76,60,.3); color:#e74c3c; }
+.badge-bk   { background:rgba(231,76,60,.3); color:#e74c3c; }
+.badge-mort { background:rgba(150,150,150,.3); color:#aaa; }
+
+/* Dice */
+.dice-row { display:flex; gap:10px; align-items:center; justify-content:center; margin:6px 0; }
+.die { width:42px; height:42px; background:#fff; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:1.5rem; box-shadow:0 3px 8px rgba(0,0,0,.4); }
+.die.rolling { animation:diceRoll .5s ease-out; }
+@keyframes diceRoll { 0%,100%{transform:rotate(0)} 25%{transform:rotate(20deg)} 75%{transform:rotate(-20deg)} }
+.dice-total { font-size:1.05rem; font-weight:bold; color:#f5af19; }
+.dice-label { font-size:.7rem; color:#aaa; }
+
+/* Buttons */
+.btn { width:100%; padding:8px; border:none; border-radius:8px; cursor:pointer; font-size:.85rem; font-weight:bold; transition:.15s; margin-top:3px; }
+.btn:disabled { opacity:.4; cursor:not-allowed; }
+.btn-primary { background:linear-gradient(135deg,#f5af19,#f12711); color:#fff; }
+.btn-primary:hover:not(:disabled) { filter:brightness(1.1); transform:translateY(-1px); }
+.btn-success { background:linear-gradient(135deg,#2ecc71,#27ae60); color:#fff; }
+.btn-success:hover:not(:disabled) { filter:brightness(1.1); }
+.btn-warning { background:linear-gradient(135deg,#f39c12,#e67e22); color:#fff; }
+.btn-danger  { background:linear-gradient(135deg,#e74c3c,#c0392b); color:#fff; }
+.btn-info    { background:linear-gradient(135deg,#3498db,#2980b9); color:#fff; }
+.btn-secondary { background:rgba(255,255,255,.1); color:#eee; border:1px solid rgba(255,255,255,.2); }
+.btn-purple  { background:linear-gradient(135deg,#9b59b6,#8e44ad); color:#fff; }
+
+/* Log */
+.log-list { max-height:130px; overflow-y:auto; display:flex; flex-direction:column; gap:2px; }
+.log-entry { font-size:.72rem; padding:3px 6px; border-radius:4px; background:rgba(255,255,255,.04); border-left:3px solid #555; }
+.log-entry.info    { border-left-color:#3498db; }
+.log-entry.success { border-left-color:#2ecc71; }
+.log-entry.warning { border-left-color:#f39c12; }
+.log-entry.danger  { border-left-color:#e74c3c; }
+
+/* Info box */
+.info-box { font-size:.78rem; line-height:1.5; color:#ccc; background:rgba(0,0,0,.2); border-radius:8px; padding:9px; }
+.info-title { font-weight:bold; color:#f5af19; margin-bottom:3px; font-size:.88rem; }
+.info-group { display:inline-block; padding:1px 5px; border-radius:4px; font-size:.72rem; margin-bottom:5px; }
+.info-desc  { color:#bbb; font-size:.75rem; margin-top:5px; }
+.rent-table { margin-top:5px; font-size:.7rem; }
+.rent-row   { display:flex; justify-content:space-between; padding:2px 0; border-bottom:1px solid rgba(255,255,255,.05); }
+
+/* Net worth badge */
+.net-worth { font-size:.7rem; color:#f5af19; }
+
+/* ── MODAL ── */
+.modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.72); z-index:100; display:flex; align-items:center; justify-content:center; }
+.modal-box { background:#1a2540; border:2px solid #f5af19; border-radius:16px; padding:24px; max-width:430px; width:92vw; box-shadow:0 20px 60px rgba(0,0,0,.6); max-height:90vh; overflow-y:auto; }
+.modal-box h2 { font-size:1.2rem; color:#f5af19; margin-bottom:7px; }
+.modal-box p  { color:#ccc; font-size:.88rem; line-height:1.6; margin-bottom:10px; }
+.modal-amount { font-size:1.4rem; font-weight:bold; color:#2ecc71; margin:8px 0; text-align:center; }
+.modal-actions { display:flex; gap:8px; margin-top:14px; flex-wrap:wrap; }
+.modal-actions .btn { flex:1; min-width:80px; }
+
+/* Trivia */
+.trivia-options { display:flex; flex-direction:column; gap:7px; margin:10px 0; }
+.trivia-option { padding:9px 12px; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.2); border-radius:8px; cursor:pointer; transition:.15s; font-size:.88rem; }
+.trivia-option:hover { background:rgba(52,152,219,.2); border-color:#3498db; }
+.trivia-option.correct { background:rgba(46,204,113,.2) !important; border-color:#2ecc71 !important; color:#2ecc71; pointer-events:none; }
+.trivia-option.wrong   { background:rgba(231,76,60,.2) !important; border-color:#e74c3c !important; color:#e74c3c; pointer-events:none; }
+
+/* Card display */
+.card-display { background:rgba(255,255,255,.05); border-radius:10px; padding:12px; text-align:center; margin:10px 0; }
+.card-type   { font-size:.78rem; color:#aaa; margin-bottom:5px; }
+.card-text   { font-size:.95rem; color:#eee; line-height:1.5; }
+.card-effect { font-size:1.1rem; font-weight:bold; color:#f5af19; margin-top:7px; }
+
+/* Trade UI */
+.trade-section { background:rgba(255,255,255,.05); border-radius:8px; padding:10px; margin:6px 0; }
+.trade-section h4 { font-size:.82rem; color:#f5af19; margin-bottom:6px; }
+.prop-chips { display:flex; flex-wrap:wrap; gap:5px; }
+.prop-chip { padding:3px 8px; border-radius:12px; font-size:.72rem; border:1px solid rgba(255,255,255,.2); cursor:pointer; transition:.15s; }
+.prop-chip.selected { border-color:#f5af19; background:rgba(245,175,25,.2); color:#f5af19; }
+.trade-input { width:100%; padding:6px 8px; background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.2); border-radius:6px; color:#eee; font-size:.85rem; margin-top:6px; }
+.trade-input:focus { outline:none; border-color:#f5af19; }
+
+/* Win */
+.win-screen { text-align:center; }
+.win-screen h2 { font-size:1.8rem; color:#f5af19; margin-bottom:8px; }
+.scoreboard { background:rgba(255,255,255,.07); border-radius:10px; padding:12px; margin:12px 0; }
+.score-row { display:flex; justify-content:space-between; padding:4px 0; font-size:.85rem; border-bottom:1px solid rgba(255,255,255,.07); }
+
+/* Scrollbar */
+::-webkit-scrollbar { width:4px; }
+::-webkit-scrollbar-track { background:rgba(255,255,255,.05); }
+::-webkit-scrollbar-thumb { background:rgba(255,255,255,.2); border-radius:2px; }
+
+/* Turn indicator */
+.turn-indicator { text-align:center; padding:5px; font-size:.8rem; color:#f5af19; font-weight:bold; }
+
+/* Property list in side panel */
+.prop-list-item { display:flex; align-items:center; gap:6px; padding:3px 0; font-size:.72rem; border-bottom:1px solid rgba(255,255,255,.05); }
+.prop-dot { width:8px; height:8px; border-radius:2px; flex-shrink:0; }
+</style>
+</head>
+<body>
+
+<!-- SETUP -->
+<div id="setup-screen">
+  <h1>🪨 岩石與礦物大富翁</h1>
+  <p style="color:#aaa;font-size:.95rem">探索礦物世界，成為最富有的地質學家！</p>
+  <div class="setup-card">
+    <h2>選擇玩家人數</h2>
+    <div class="player-count-btns">
+      <button class="cnt-btn active" onclick="setPC(2)">2人</button>
+      <button class="cnt-btn" onclick="setPC(3)">3人</button>
+      <button class="cnt-btn" onclick="setPC(4)">4人</button>
+    </div>
+    <h2>玩家設定</h2>
+    <div class="player-inputs" id="player-inputs"></div>
+    <button class="start-btn" onclick="startGame()">🎮 開始遊戲！</button>
+  </div>
+</div>
+
+<!-- GAME -->
+<div id="game-screen">
+  <div class="board" id="board">
+    <div class="board-center">
+      <div style="font-size:2rem">🪨</div>
+      <h2>岩石與礦物</h2>
+      <h3>大　富　翁</h3>
+      <div class="center-legend" id="center-legend"></div>
+      <div style="font-size:.6rem;color:#888;margin-top:6px;text-align:center">點擊地塊查看詳情</div>
+    </div>
+  </div>
+
+  <div class="side-panel">
+    <div class="panel-section">
+      <h3>👥 玩家狀態</h3>
+      <div id="player-cards"></div>
+    </div>
+
+    <div class="panel-section">
+      <h3>🎲 行動</h3>
+      <div class="turn-indicator" id="turn-indicator">─</div>
+      <div class="dice-row">
+        <div class="die" id="die1">⚀</div>
+        <div style="text-align:center">
+          <div class="dice-total" id="dice-total">-</div>
+          <div class="dice-label">合計</div>
+        </div>
+        <div class="die" id="die2">⚀</div>
+      </div>
+      <button class="btn btn-primary"   id="roll-btn"    onclick="rollDice()">🎲 擲骰子</button>
+      <button class="btn btn-warning"   id="jail-btn"    onclick="payJailFine()" style="display:none">💰 繳 $50 出獄</button>
+      <button class="btn btn-info"      id="build-btn"   onclick="showBuildMenu()" style="display:none">🏠 建造 / 抵押</button>
+      <button class="btn btn-purple"    id="trade-btn"   onclick="showTradeMenu()" style="display:none">🤝 交易</button>
+      <button class="btn btn-secondary" id="end-btn"     onclick="endTurn()" style="display:none">⏭ 結束回合</button>
+    </div>
+
+    <div class="panel-section">
+      <h3>📍 位置資訊</h3>
+      <div class="info-box" id="space-info">點擊地圖上的地塊查看詳情</div>
+    </div>
+
+    <div class="panel-section">
+      <h3>📋 遊戲記錄</h3>
+      <div class="log-list" id="log-list"></div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL -->
+<div class="modal-overlay" id="modal" style="display:none">
+  <div class="modal-box" id="modal-content"></div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════
+// CONSTANTS
+// ═══════════════════════════════════════════════
+const PLAYER_COLORS = ['#E74C3C','#3498DB','#2ECC71','#F39C12'];
+const PLAYER_EMOJIS = ['💎','🔵','🔺','⭐'];
+const DIE_FACES = ['⚀','⚁','⚂','⚃','⚄','⚅'];
+const GROUP_COLORS = { brown:'#8B4513', lightblue:'#87CEEB', pink:'#FF69B4', orange:'#FFA500', red:'#CC0000', yellow:'#FFD700', green:'#228B22', darkblue:'#00008B' };
+const GROUP_NAMES  = { brown:'棕色組', lightblue:'淺藍組', pink:'粉紅組', orange:'橙色組', red:'紅色組', yellow:'黃色組', green:'綠色組', darkblue:'深藍組' };
+
+const SPACES = [
+  {id:0,  name:'出發',    short:'GO',   type:'go',        emoji:'🏁', desc:'每次通過或停在出發點，收取 $200 薪資！'},
+  {id:1,  name:'石英',    short:'石英',  type:'property',  group:'brown',    price:60,  rent:[2,10,30,90,160,250],  hc:50,  desc:'石英 (SiO₂)，莫氏硬度 7，地殼最常見礦物之一，是玻璃與水泥的重要原料。'},
+  {id:2,  name:'社區胸卡', short:'社區',  type:'community', emoji:'📦', desc:'抽取社區胸卡，執行卡片指示。'},
+  {id:3,  name:'長石',    short:'長石',  type:'property',  group:'brown',    price:60,  rent:[4,20,60,180,320,450],  hc:50,  desc:'長石占地殼重量約 51%，是最豐富的礦物群，花崗岩的主要成分。'},
+  {id:4,  name:'採礦稅',  short:'採礦稅', type:'tax',       amount:200, emoji:'💰', desc:'繳交採礦稅 $200。'},
+  {id:5,  name:'鐵路一',  short:'鐵路1', type:'railroad',   price:200,  emoji:'🚂', desc:'礦石鐵路：擁有越多條，租金越高！'},
+  {id:6,  name:'雲母',    short:'雲母',  type:'property',  group:'lightblue', price:100, rent:[6,30,90,270,400,550],  hc:50, desc:'雲母是片狀矽酸鹽礦物，具絕緣耐熱性，廣泛用於電子工業。'},
+  {id:7,  name:'機會',    short:'機會',  type:'chance',    emoji:'❓', desc:'機會卡：可能是好消息也可能是壞消息！'},
+  {id:8,  name:'方解石',  short:'方解石', type:'property',  group:'lightblue', price:100, rent:[6,30,90,270,400,550],  hc:50, desc:'方解石 (CaCO₃)，莫氏硬度 3，遇稀鹽酸起泡，石灰岩主要礦物。'},
+  {id:9,  name:'高嶺土',  short:'高嶺土', type:'property',  group:'lightblue', price:120, rent:[8,40,100,300,450,600], hc:50, desc:'高嶺土由長石風化而成，是陶瓷、造紙工業的重要原料。'},
+  {id:10, name:'監獄',    short:'監獄',  type:'jail',      emoji:'🔒', desc:'探視區：路過沒事；若被關入需繳 $50 或擲雙數才能出獄。'},
+  {id:11, name:'大理石',  short:'大理石', type:'property',  group:'pink',     price:140, rent:[10,50,150,450,625,750], hc:100, desc:'大理石是石灰岩變質而成，質地細膩，為重要建築與雕刻材料。'},
+  {id:12, name:'電力公司', short:'電力',  type:'utility',   price:150,  emoji:'⚡', desc:'採礦電力公司。租金 = 擲出點數 × 4（兩家均擁有則 × 10）。'},
+  {id:13, name:'板岩',    short:'板岩',  type:'property',  group:'pink',     price:140, rent:[10,50,150,450,625,750], hc:100, desc:'板岩具板狀劈理，歷史上常用作書寫板與屋頂瓦片。'},
+  {id:14, name:'片麻岩',  short:'片麻岩', type:'property',  group:'pink',     price:160, rent:[12,60,180,500,700,900], hc:100, desc:'片麻岩是高度變質岩，具深淺礦物交替排列的片麻狀構造。'},
+  {id:15, name:'鐵路二',  short:'鐵路2', type:'railroad',   price:200,  emoji:'🚂', desc:'礦石鐵路：擁有越多條，租金越高！'},
+  {id:16, name:'紅寶石',  short:'紅寶石', type:'property',  group:'orange',   price:180, rent:[14,70,200,550,750,950], hc:100, desc:'紅寶石是剛玉 (Al₂O₃) 的紅色變種，含微量鉻，莫氏硬度 9。'},
+  {id:17, name:'社區胸卡', short:'社區',  type:'community', emoji:'📦', desc:'抽取社區胸卡，執行卡片指示。'},
+  {id:18, name:'藍寶石',  short:'藍寶石', type:'property',  group:'orange',   price:180, rent:[14,70,200,550,750,950], hc:100, desc:'藍寶石是剛玉的藍色變種，含鐵和鈦，主要產於斯里蘭卡。'},
+  {id:19, name:'托帕石',  short:'托帕石', type:'property',  group:'orange',   price:200, rent:[16,80,220,600,800,1000],hc:100, desc:'托帕石莫氏硬度 8，常見藍、黃、粉紅等顏色，帝王托帕石最珍貴。'},
+  {id:20, name:'免費停車', short:'停車',  type:'parking',   emoji:'🅿️', desc:'免費停車場：休息一下，沒有獎懲。可能遇到知識問答！'},
+  {id:21, name:'祖母綠',  short:'祖母綠', type:'property',  group:'red',      price:220, rent:[18,90,250,700,875,1050],hc:150, desc:'祖母綠是綠柱石的綠色變種，含鉻呈翠綠，主要產於哥倫比亞。'},
+  {id:22, name:'機會',    short:'機會',  type:'chance',    emoji:'❓', desc:'機會卡：可能是好消息也可能是壞消息！'},
+  {id:23, name:'紫水晶',  short:'紫水晶', type:'property',  group:'red',      price:220, rent:[18,90,250,700,875,1050],hc:150, desc:'紫水晶是石英的紫色變種，因含微量鐵呈紫色，莫氏硬度 7。'},
+  {id:24, name:'黑曜石',  short:'黑曜石', type:'property',  group:'red',      price:240, rent:[20,100,300,750,925,1100],hc:150, desc:'黑曜石是火山熔岩急速冷卻的天然玻璃，邊緣極鋒利。'},
+  {id:25, name:'鐵路三',  short:'鐵路3', type:'railroad',   price:200,  emoji:'🚂', desc:'礦石鐵路：擁有越多條，租金越高！'},
+  {id:26, name:'黃金',    short:'黃金',  type:'property',  group:'yellow',   price:260, rent:[22,110,330,800,975,1150],hc:150, desc:'黃金 (Au) 化學性質極穩定，延展性最強，是重要貨幣與電子材料。'},
+  {id:27, name:'白銀',    short:'白銀',  type:'property',  group:'yellow',   price:260, rent:[22,110,330,800,975,1150],hc:150, desc:'白銀 (Ag) 導電、導熱性最高，廣泛用於電子、醫療與珠寶工業。'},
+  {id:28, name:'水力公司', short:'水力',  type:'utility',   price:150,  emoji:'💧', desc:'礦石水力公司。租金 = 擲出點數 × 4（兩家均擁有則 × 10）。'},
+  {id:29, name:'鑽石',    short:'鑽石',  type:'property',  group:'yellow',   price:280, rent:[24,120,360,850,1025,1200],hc:150, desc:'鑽石是碳的同素異形體，莫氏硬度 10，形成於地球深部高壓環境。'},
+  {id:30, name:'前往監獄', short:'去監獄', type:'gotojail',  emoji:'👮', desc:'立即移動到監獄，不收取出發點 $200。'},
+  {id:31, name:'花崗岩',  short:'花崗岩', type:'property',  group:'green',    price:300, rent:[26,130,390,900,1100,1275],hc:200, desc:'花崗岩是深成侵入岩，由石英、長石與黑雲母組成，質地堅硬。'},
+  {id:32, name:'玄武岩',  short:'玄武岩', type:'property',  group:'green',    price:300, rent:[26,130,390,900,1100,1275],hc:200, desc:'玄武岩是火山噴出岩，是洋殼的主要組成，也形成玄武岩柱等奇觀。'},
+  {id:33, name:'社區胸卡', short:'社區',  type:'community', emoji:'📦', desc:'抽取社區胸卡，執行卡片指示。'},
+  {id:34, name:'浮石',    short:'浮石',  type:'property',  group:'green',    price:320, rent:[28,150,450,1000,1200,1400],hc:200, desc:'浮石因大量氣泡密度極低，是唯一能漂浮在水面上的岩石！'},
+  {id:35, name:'鐵路四',  short:'鐵路4', type:'railroad',   price:200,  emoji:'🚂', desc:'礦石鐵路：擁有越多條，租金越高！'},
+  {id:36, name:'機會',    short:'機會',  type:'chance',    emoji:'❓', desc:'機會卡：可能是好消息也可能是壞消息！'},
+  {id:37, name:'黃鐵礦',  short:'黃鐵礦', type:'property',  group:'darkblue', price:350, rent:[35,175,500,1100,1300,1500],hc:200, desc:'黃鐵礦 (FeS₂) 又稱「愚人金」，因外觀似黃金而得名，莫氏硬度 6。'},
+  {id:38, name:'豪華礦物稅', short:'豪華稅', type:'tax',    amount:100, emoji:'💎', desc:'豪華礦物稅：繳納 $100。'},
+  {id:39, name:'橄欖石',  short:'橄欖石', type:'property',  group:'darkblue', price:400, rent:[50,200,600,1400,1700,2000],hc:200, desc:'橄欖石是地幔的主要礦物，也常見於隕石中，寶石級稱為貴橄欖石。'},
+];
+
+// Board grid positions [row, col] in 11×11 grid
+const GRID_POS = {
+  0:[11,11], 1:[11,10], 2:[11,9],  3:[11,8],  4:[11,7],  5:[11,6],
+  6:[11,5],  7:[11,4],  8:[11,3],  9:[11,2],  10:[11,1],
+  11:[10,1], 12:[9,1],  13:[8,1],  14:[7,1],  15:[6,1],
+  16:[5,1],  17:[4,1],  18:[3,1],  19:[2,1],
+  20:[1,1],  21:[1,2],  22:[1,3],  23:[1,4],  24:[1,5],  25:[1,6],
+  26:[1,7],  27:[1,8],  28:[1,9],  29:[1,10], 30:[1,11],
+  31:[2,11], 32:[3,11], 33:[4,11], 34:[5,11], 35:[6,11],
+  36:[7,11], 37:[8,11], 38:[9,11], 39:[10,11]
+};
+
+const CHANCE_CARDS = [
+  {text:'在礦場發現稀有礦脈！銀行支付你',         amount:50,  type:'gain'},
+  {text:'地質考察旅費補助，收取',                   amount:100, type:'gain'},
+  {text:'出售精選礦石標本，收取',                   amount:150, type:'gain'},
+  {text:'礦業博覽會特別獎，收取',                   amount:200, type:'gain'},
+  {text:'礦山設備維修費，支付',                     amount:75,  type:'lose'},
+  {text:'礦區環境整治罰款，支付',                   amount:100, type:'lose'},
+  {text:'前進到出發點，收取 $200',                  amount:0,   type:'goto',  target:0},
+  {text:'前往礦石鐵路一號站！',                     amount:0,   type:'goto',  target:5},
+  {text:'前往黃金礦區！',                           amount:0,   type:'goto',  target:26},
+  {text:'立刻前往監獄！不得收取出發點薪資',         amount:0,   type:'jail'},
+  {text:'向每位玩家收取地質研究費各',               amount:50,  type:'collect_from_all'},
+  {text:'退後三格',                                  amount:0,   type:'move',  steps:-3},
+];
+
+const COMMUNITY_CARDS = [
+  {text:'礦業公司年終分紅，收取',                   amount:200, type:'gain'},
+  {text:'地質研究獎學金，收取',                     amount:100, type:'gain'},
+  {text:'礦山開採許可費，支付',                     amount:50,  type:'lose'},
+  {text:'礦工醫療保險費，支付',                     amount:100, type:'lose'},
+  {text:'找到古代礦藏地圖！收取',                   amount:150, type:'gain'},
+  {text:'礦業安全檢查通過獎金，收取',               amount:50,  type:'gain'},
+  {text:'礦業稅退稅，收取',                         amount:75,  type:'gain'},
+  {text:'礦場排水設施費，支付',                     amount:80,  type:'lose'},
+  {text:'前進到出發點，收取 $200',                  amount:0,   type:'goto',  target:0},
+  {text:'立刻前往監獄！不得收取出發點薪資',         amount:0,   type:'jail'},
+  {text:'向每位玩家收取礦石分析費各',               amount:40,  type:'collect_from_all'},
+  {text:'礦業保險理賠，收取',                       amount:120, type:'gain'},
+];
+
+const TRIVIA = [
+  {q:'下列哪種礦物莫氏硬度最高？',           opts:['石英','長石','鑽石','方解石'],    ans:2, fact:'鑽石莫氏硬度為 10，是自然界最硬的天然物質！'},
+  {q:'花崗岩屬於哪類岩石？',                 opts:['沉積岩','火成岩','變質岩','礦物'],  ans:1, fact:'花崗岩是深成侵入岩，由岩漿在地殼深部緩慢冷卻結晶形成。'},
+  {q:'黃鐵礦又被稱為什麼？',                 opts:['愚人金','愚人銀','火石','磁石'],    ans:0, fact:'黃鐵礦 (FeS₂) 因外觀似黃金而被稱為「愚人金」，但並不含金。'},
+  {q:'石灰岩主要由哪種礦物組成？',           opts:['石英','長石','方解石','雲母'],      ans:2, fact:'石灰岩主要由方解石 (CaCO₃) 組成，是最常見的沉積岩之一。'},
+  {q:'哪種岩石可以漂浮在水面上？',           opts:['花崗岩','玄武岩','浮石','板岩'],    ans:2, fact:'浮石因含大量氣泡、密度極低，是唯一能漂浮在水上的岩石！'},
+  {q:'紅寶石和藍寶石都是哪種礦物的變種？',   opts:['石英','剛玉','長石','雲母'],        ans:1, fact:'兩者皆為剛玉 (Al₂O₃)：紅色含鉻，藍色含鐵和鈦。'},
+  {q:'大理石由哪種岩石變質形成？',           opts:['花崗岩','砂岩','石灰岩','頁岩'],    ans:2, fact:'大理石是石灰岩在高溫高壓下重結晶（變質）形成的變質岩。'},
+  {q:'黑曜石是如何形成的？',                 opts:['海底沉積','火山熔岩急冷','礦物結晶','生物遺骸'], ans:1, fact:'黑曜石是火山熔岩急速冷卻的天然玻璃，沒有晶體結構。'},
+  {q:'哪個元素使祖母綠呈現綠色？',           opts:['鐵(Fe)','鋁(Al)','鉻(Cr)','銅(Cu)'], ans:2, fact:'祖母綠呈綠色是因含微量鉻 (Cr)，與紅寶石呈色元素相同！'},
+  {q:'橄欖石是地球哪個圈層的主要礦物？',     opts:['地殼','地幔','外核','內核'],         ans:1, fact:'橄欖石是地幔的主要礦物，佔地幔超過 60%，也常見於隕石。'},
+  {q:'雲母最主要的工業用途是什麼？',         opts:['製造玻璃','電子絕緣材料','煉鐵','製造水泥'], ans:1, fact:'雲母具耐熱絕緣性，是重要的電子工業材料。'},
+  {q:'方解石遇稀鹽酸會有什麼反應？',         opts:['無反應','變藍色','劇烈起泡','溶解消失'], ans:2, fact:'方解石 (CaCO₃) 與鹽酸反應生成 CO₂，會劇烈起泡！'},
+];
+
+// ═══════════════════════════════════════════════
+// GAME STATE
+// ═══════════════════════════════════════════════
+let G = {
+  players: [],
+  cur: 0,
+  phase: 'roll',           // 'roll' | 'action'
+  props: {},               // spaceId → {owner, houses, mortgaged}
+  chanceIdx: 0,
+  communityIdx: 0,
+  triviaUsed: new Set(),
+  dice: [1,1],
+  doubleCount: 0,
+  over: false,
+  pendingIsDouble: false,  // remember if last roll was double for post-modal flows
+  tradeTarget: -1,
+  tradeMyProps: new Set(),
+  tradeTheirProps: new Set(),
+};
+
+let setupCount = 2;
+let setupIsAI = [false, true, false, false];
+
+// ═══════════════════════════════════════════════
+// SETUP
+// ═══════════════════════════════════════════════
+function setPC(n) {
+  setupCount = n;
+  document.querySelectorAll('.cnt-btn').forEach((b,i) => b.classList.toggle('active', i === n-2));
+  renderSetupPlayers();
+}
+
+function renderSetupPlayers() {
+  const names = ['玩家一','玩家二','玩家三','玩家四'];
+  const c = document.getElementById('player-inputs');
+  c.innerHTML = '';
+  for (let i = 0; i < setupCount; i++) {
+    const row = document.createElement('div');
+    row.className = 'player-row';
+    row.innerHTML = `
+      <div class="pcolor" style="background:${PLAYER_COLORS[i]}"></div>
+      <input id="pn${i}" value="${names[i]}" />
+      <button class="ai-toggle ${setupIsAI[i]?'is-ai':''}" id="ai${i}" onclick="toggleAI(${i})">
+        ${setupIsAI[i]?'🤖 AI':'👤 人類'}
+      </button>`;
+    c.appendChild(row);
+  }
+}
+
+function toggleAI(i) {
+  setupIsAI[i] = !setupIsAI[i];
+  const b = document.getElementById(`ai${i}`);
+  b.textContent = setupIsAI[i] ? '🤖 AI' : '👤 人類';
+  b.classList.toggle('is-ai', setupIsAI[i]);
+}
+
+function startGame() {
+  G.players = [];
+  for (let i = 0; i < setupCount; i++) {
+    const name = document.getElementById(`pn${i}`).value.trim() || `玩家${i+1}`;
+    G.players.push({name, color:PLAYER_COLORS[i], emoji:PLAYER_EMOJIS[i], isAI:setupIsAI[i],
+      money:1500, pos:0, inJail:false, jailTurns:0, bankrupt:false});
+  }
+  G.props = {}; G.cur = 0; G.phase = 'roll'; G.chanceIdx = 0; G.communityIdx = 0;
+  G.triviaUsed.clear(); G.doubleCount = 0; G.over = false;
+
+  CHANCE_CARDS.sort(()=>Math.random()-.5);
+  COMMUNITY_CARDS.sort(()=>Math.random()-.5);
+
+  document.getElementById('setup-screen').style.display = 'none';
+  document.getElementById('game-screen').style.display  = 'flex';
+
+  renderBoard();
+  renderLegend();
+  renderUI();
+  addLog('遊戲開始！每位玩家持有 $1500。', 'info');
+  addLog(`─── ${G.players[0].name} 的回合 ───`, 'info');
+  if (G.players[0].isAI) setTimeout(aiTurn, 900);
+}
+
+// ═══════════════════════════════════════════════
+// BOARD
+// ═══════════════════════════════════════════════
+function renderBoard() {
+  const board = document.getElementById('board');
+  const center = board.querySelector('.board-center');
+  board.innerHTML = '';
+  board.appendChild(center);
+
+  SPACES.forEach(sp => {
+    const [row, col] = GRID_POS[sp.id];
+    const cell = document.createElement('div');
+    cell.className = 'cell';
+    cell.id = `cell-${sp.id}`;
+    cell.style.gridRow = row;
+    cell.style.gridColumn = col;
+
+    const isCorner = (row===1||row===11) && (col===1||col===11);
+    let side = row===1?'top': col===1?'left': col===11?'right':'bottom';
+
+    if (isCorner) {
+      cell.classList.add('corner');
+      cell.innerHTML = `<div style="font-size:15px">${sp.emoji||'⬛'}</div><div class="corner-label">${sp.name}</div>`;
+    } else {
+      cell.classList.add(`cell-${side}`);
+      if (sp.group) cell.dataset.group = sp.group;
+
+      const bar = sp.group ? `<div class="color-bar" data-group="${sp.group}"></div>` : '';
+      const nameHtml = `<div class="cell-name">${sp.short}</div>`;
+      const priceHtml = sp.price ? `<div class="cell-price">$${sp.price}</div>` : '';
+      const emojiHtml = !sp.group ? `<div class="cell-emoji">${sp.emoji||''}</div>` : '';
+
+      if (side === 'bottom') {
+        cell.innerHTML = `${bar}<div class="cell-content">${nameHtml}${priceHtml}${emojiHtml}</div>`;
+      } else if (side === 'top') {
+        cell.innerHTML = `<div class="cell-content">${nameHtml}${priceHtml}${emojiHtml}</div>${bar}`;
+      } else if (side === 'left') {
+        const barV = sp.group ? `<div class="color-bar" style="min-width:13px;max-width:13px;height:100%" data-group="${sp.group}"></div>` : '';
+        cell.innerHTML = `<div class="cell-content">${nameHtml}${priceHtml}${emojiHtml}</div>${barV}`;
+      } else { // right
+        const barV = sp.group ? `<div class="color-bar" style="min-width:13px;max-width:13px;height:100%" data-group="${sp.group}"></div>` : '';
+        cell.innerHTML = `${barV}<div class="cell-content">${nameHtml}${priceHtml}${emojiHtml}</div>`;
+      }
+    }
+
+    cell.onclick = () => showSpaceInfo(sp.id);
+    board.appendChild(cell);
+  });
+
+  refreshCells();
+}
+
+function refreshCells() {
+  // Clear dynamic elements
+  document.querySelectorAll('.tokens-container,.buildings').forEach(e=>e.remove());
+  document.querySelectorAll('.cell').forEach(el => {
+    el.classList.remove('owned-0','owned-1','owned-2','owned-3','mortgaged');
+  });
+
+  // Owner tints & mortgaged
+  Object.entries(G.props).forEach(([sid, prop]) => {
+    const cell = document.getElementById(`cell-${sid}`);
+    if (!cell) return;
+    if (prop.mortgaged) cell.classList.add('mortgaged');
+    else cell.classList.add(`owned-${prop.owner}`);
+
+    if (!prop.mortgaged && prop.houses > 0) {
+      const b = document.createElement('div');
+      b.className = 'buildings';
+      if (prop.houses === 5) b.innerHTML = `<div class="hotel"></div>`;
+      else for (let i=0;i<prop.houses;i++) b.innerHTML += `<div class="house"></div>`;
+      cell.appendChild(b);
+    }
+  });
+
+  // Player tokens
+  const byPos = {};
+  G.players.forEach((p,i) => { if (!p.bankrupt) { (byPos[p.pos]||(byPos[p.pos]=[])).push({i,p}); } });
+  Object.entries(byPos).forEach(([pos, list]) => {
+    const cell = document.getElementById(`cell-${pos}`);
+    if (!cell) return;
+    const c = document.createElement('div');
+    c.className = 'tokens-container';
+    list.forEach(({p}) => {
+      const t = document.createElement('div');
+      t.className = 'token';
+      t.style.background = p.color;
+      t.title = p.name;
+      c.appendChild(t);
+    });
+    cell.appendChild(c);
+  });
+}
+
+function renderLegend() {
+  const l = document.getElementById('center-legend');
+  l.innerHTML = Object.entries(GROUP_COLORS).map(([k,c]) =>
+    `<div class="legend-item"><div class="legend-dot" style="background:${c}"></div><span>${GROUP_NAMES[k]}</span></div>`
+  ).join('');
+}
+
+// ═══════════════════════════════════════════════
+// UI
+// ═══════════════════════════════════════════════
+function renderUI() { renderPlayerCards(); updateButtons(); }
+
+function netWorth(i) {
+  const p = G.players[i];
+  let w = p.money;
+  Object.entries(G.props).forEach(([sid,prop]) => {
+    if (prop.owner !== i) return;
+    const sp = SPACES[sid];
+    w += prop.mortgaged ? Math.floor(sp.price/2) : sp.price;
+    w += prop.houses * (SPACES[sid].hc||0);
+  });
+  return w;
+}
+
+function renderPlayerCards() {
+  const c = document.getElementById('player-cards');
+  c.innerHTML = '';
+  G.players.forEach((p,i) => {
+    const sp = SPACES[p.pos];
+    const propCnt = Object.values(G.props).filter(pr=>pr.owner===i).length;
+    const nw = netWorth(i);
+    const card = document.createElement('div');
+    card.className = `player-card ${i===G.cur&&!G.over?'active-player':''} ${p.bankrupt?'bankrupt':''}`;
+    card.innerHTML = `
+      <div class="player-dot" style="background:${p.color}">${p.emoji}</div>
+      <div class="player-info">
+        <div class="player-name-row">
+          ${p.name}
+          ${p.isAI?'<span class="pbadge badge-ai">AI</span>':''}
+          ${p.inJail?'<span class="pbadge badge-jail">監獄</span>':''}
+          ${p.bankrupt?'<span class="pbadge badge-bk">破產</span>':''}
+        </div>
+        <div class="player-money">💰 $${p.money} <span class="net-worth">（淨值 $${nw}）</span></div>
+        <div class="player-pos">📍 ${sp.name} | 🏠 ${propCnt}處</div>
+      </div>`;
+    c.appendChild(card);
+  });
+
+  const p = G.players[G.cur];
+  document.getElementById('turn-indicator').textContent = p && !G.over ? `${p.emoji} ${p.name} 的回合` : '遊戲結束';
+}
+
+function updateButtons() {
+  const p = G.players[G.cur];
+  if (!p || G.over) {
+    ['roll-btn','jail-btn','build-btn','trade-btn','end-btn'].forEach(id=>{
+      const el=document.getElementById(id); if(el){el.style.display='none';}
+    });
+    return;
+  }
+  const isRoll = G.phase === 'roll';
+  const isAct  = G.phase === 'action';
+  document.getElementById('roll-btn').style.display  = isRoll ? 'block' : 'none';
+  document.getElementById('roll-btn').disabled       = p.isAI;
+  document.getElementById('jail-btn').style.display  = isRoll && p.inJail ? 'block' : 'none';
+  document.getElementById('end-btn').style.display   = isAct  ? 'block' : 'none';
+  document.getElementById('build-btn').style.display = isAct  ? 'block' : 'none';
+  document.getElementById('trade-btn').style.display = isAct && G.players.filter(q=>!q.bankrupt).length>1 ? 'block' : 'none';
+}
+
+// ═══════════════════════════════════════════════
+// SPACE INFO
+// ═══════════════════════════════════════════════
+function showSpaceInfo(id) {
+  const sp = SPACES[id];
+  const prop = G.props[id];
+  let h = `<div class="info-title">${sp.emoji||''} ${sp.name}</div>`;
+
+  if (sp.group) {
+    const gc = GROUP_COLORS[sp.group];
+    const textColor = ['yellow','lightblue'].includes(sp.group)?'#333':'#fff';
+    h += `<span class="info-group" style="background:${gc};color:${textColor}">${GROUP_NAMES[sp.group]}</span><br>`;
+  }
+  if (sp.price) h += `售價：$${sp.price}`;
+  if (sp.hc) h += ` | 建屋費：$${sp.hc}`;
+  if (sp.price) h += '<br>';
+  if (prop) {
+    const owner = G.players[prop.owner];
+    h += `<span style="color:${owner.color}">持有者：${owner.name}</span>`;
+    if (prop.mortgaged) h += ' <span style="color:#aaa">[已抵押]</span>';
+    else {
+      const bld = prop.houses===5 ? '🏨 旅館' : prop.houses>0 ? `🏠×${prop.houses}` : '空地';
+      h += ` | ${bld}`;
+    }
+    h += '<br>';
+  }
+  if (sp.type==='property') {
+    h += `<div class="rent-table">
+      <div class="rent-row"><span>無建築</span><span>$${sp.rent[0]}</span></div>
+      <div class="rent-row"><span>全色組（加倍）</span><span>$${sp.rent[0]*2}</span></div>
+      <div class="rent-row"><span>🏠×1</span><span>$${sp.rent[1]}</span></div>
+      <div class="rent-row"><span>🏠×2</span><span>$${sp.rent[2]}</span></div>
+      <div class="rent-row"><span>🏠×3</span><span>$${sp.rent[3]}</span></div>
+      <div class="rent-row"><span>🏠×4</span><span>$${sp.rent[4]}</span></div>
+      <div class="rent-row"><span>🏨 旅館</span><span>$${sp.rent[5]}</span></div>
+    </div>`;
+  } else if (sp.type==='railroad') {
+    h += `<div class="rent-table">
+      <div class="rent-row"><span>1條鐵路</span><span>$25</span></div>
+      <div class="rent-row"><span>2條鐵路</span><span>$50</span></div>
+      <div class="rent-row"><span>3條鐵路</span><span>$100</span></div>
+      <div class="rent-row"><span>4條鐵路</span><span>$200</span></div>
+    </div>`;
+  } else if (sp.type==='utility') {
+    h += `<div style="font-size:.72rem;margin-top:4px">租金 = 骰點 × 4（兩家均擁有 × 10）</div>`;
+  }
+  h += `<div class="info-desc">${sp.desc}</div>`;
+  document.getElementById('space-info').innerHTML = h;
+}
+
+// ═══════════════════════════════════════════════
+// DICE & MOVEMENT
+// ═══════════════════════════════════════════════
+function rollDice() {
+  if (G.phase !== 'roll' || G.over) return;
+  const p = G.players[G.cur];
+  const d1 = Math.ceil(Math.random()*6);
+  const d2 = Math.ceil(Math.random()*6);
+  G.dice = [d1,d2];
+  animDice(d1,d2);
+
+  const isDouble = d1===d2;
+
+  if (p.inJail) {
+    if (isDouble) {
+      p.inJail = false; p.jailTurns = 0;
+      addLog(`${p.name} 擲出雙數 ${d1}+${d2}，出獄！`, 'success');
+      setTimeout(() => movePlayer(d1+d2, false), 600);
+    } else {
+      p.jailTurns++;
+      if (p.jailTurns >= 3) {
+        p.money -= 50; p.inJail = false; p.jailTurns = 0;
+        addLog(`${p.name} 坐滿3回合，強制繳 $50 出獄，移動 ${d1+d2} 步`, 'warning');
+        renderPlayerCards();
+        setTimeout(() => movePlayer(d1+d2, false), 600);
+      } else {
+        addLog(`${p.name} 擲 ${d1}+${d2}，未出獄（第 ${p.jailTurns} 回合）`, 'warning');
+        G.phase = 'action'; updateButtons(); renderPlayerCards();
+        if (p.isAI) setTimeout(() => { if(G.phase==='action') endTurn(); }, 900);
+      }
+    }
+    return;
+  }
+
+  if (isDouble) {
+    G.doubleCount++;
+    if (G.doubleCount >= 3) {
+      addLog(`${p.name} 連續三次雙數，送進監獄！`, 'danger');
+      animDice(d1,d2);
+      setTimeout(() => goToJail(), 600);
+      return;
+    }
+    addLog(`${p.name} 擲出雙數！${d1}+${d2}=${d1+d2}，可再擲一次`, 'success');
+  } else {
+    G.doubleCount = 0;
+    addLog(`${p.name} 擲出 ${d1}+${d2}=${d1+d2}`, 'info');
+  }
+  setTimeout(() => movePlayer(d1+d2, isDouble), 600);
+}
+
+function animDice(d1,d2) {
+  const el1=document.getElementById('die1'), el2=document.getElementById('die2');
+  el1.classList.add('rolling'); el2.classList.add('rolling');
+  setTimeout(()=>{
+    el1.textContent=DIE_FACES[d1-1]; el2.textContent=DIE_FACES[d2-1];
+    document.getElementById('dice-total').textContent=d1+d2;
+    el1.classList.remove('rolling'); el2.classList.remove('rolling');
+  },500);
+}
+
+function movePlayer(steps, isDouble) {
+  const p = G.players[G.cur];
+  const newPos = (p.pos + steps) % 40;
+  // Passed GO?
+  if (newPos < p.pos || (p.pos===0 && steps>0 && newPos!==0)) {
+    p.money += 200;
+    addLog(`${p.name} 經過出發點，收 $200！`, 'success');
+    renderPlayerCards();
+  }
+  p.pos = newPos;
+  refreshCells();
+  showSpaceInfo(newPos);
+  G.pendingIsDouble = isDouble;
+  setTimeout(() => landOn(newPos), 300);
+}
+
+function landOn(sid) {
+  const sp = SPACES[sid];
+  const p  = G.players[G.cur];
+  const isDouble = G.pendingIsDouble;
+  addLog(`${p.name} 停在【${sp.name}】`, 'info');
+
+  if (sp.type==='go') {
+    finishLand(isDouble);
+  } else if (sp.type==='property'||sp.type==='railroad'||sp.type==='utility') {
+    const prop = G.props[sid];
+    if (!prop) {
+      // Unowned
+      if (p.money >= sp.price) {
+        if (p.isAI) {
+          aiDecideBuy(sid, isDouble);
+        } else {
+          showBuyModal(sid);
+          return; // modal will call finishLand
+        }
+      } else {
+        addLog(`${p.name} 資金不足，無法購買【${sp.name}】`, 'warning');
+        finishLand(isDouble);
+      }
+    } else if (prop.mortgaged) {
+      addLog(`${p.name} 停在已抵押的【${sp.name}】，免租金`, 'info');
+      finishLand(isDouble);
+    } else if (prop.owner !== G.cur) {
+      const rent = calcRent(sid);
+      const owner = G.players[prop.owner];
+      p.money -= rent; owner.money += rent;
+      addLog(`${p.name} 付租金 $${rent} 給 ${owner.name}【${sp.name}】`, 'warning');
+      renderPlayerCards();
+      if (p.money < 0) { handleBankruptcy(G.cur, prop.owner); return; }
+      finishLand(isDouble);
+    } else {
+      addLog(`${p.name} 自己的地產，免租金`, 'info');
+      finishLand(isDouble);
+    }
+  } else if (sp.type==='tax') {
+    p.money -= sp.amount;
+    addLog(`${p.name} 繳稅 $${sp.amount}`, 'danger');
+    renderPlayerCards();
+    if (p.money < 0) { handleBankruptcy(G.cur, -1); return; }
+    finishLand(isDouble);
+  } else if (sp.type==='jail') {
+    addLog(`${p.name} 探視監獄，平安無事`, 'info');
+    finishLand(isDouble);
+  } else if (sp.type==='gotojail') {
+    goToJail();
+  } else if (sp.type==='parking') {
+    addLog(`${p.name} 免費停車，休息！`, 'info');
+    if (Math.random()<0.75) { setTimeout(()=>showTrivia(isDouble),300); return; }
+    finishLand(isDouble);
+  } else if (sp.type==='chance') {
+    drawCard('chance', isDouble); return;
+  } else if (sp.type==='community') {
+    drawCard('community', isDouble); return;
+  }
+}
+
+function finishLand(isDouble) {
+  if (isDouble) {
+    G.phase = 'roll';
+    addLog('雙數！可再擲一次', 'success');
+  } else {
+    G.phase = 'action';
+  }
+  updateButtons();
+  renderPlayerCards();
+  if (G.players[G.cur].isAI && G.phase==='action') {
+    setTimeout(() => { aiTryBuild(); setTimeout(()=>{ if(G.phase==='action') endTurn(); },600); },400);
+  }
+}
+
+// ═══════════════════════════════════════════════
+// RENT
+// ═══════════════════════════════════════════════
+function calcRent(sid) {
+  const sp = SPACES[sid];
+  const prop = G.props[sid];
+  if (sp.type==='property') {
+    if (prop.houses>0) return sp.rent[prop.houses];
+    const grpOwned = SPACES.filter(s=>s.group===sp.group).every(s=>G.props[s.id]?.owner===prop.owner&&!G.props[s.id]?.mortgaged);
+    return grpOwned ? sp.rent[0]*2 : sp.rent[0];
+  }
+  if (sp.type==='railroad') {
+    const n = Object.keys(G.props).filter(k=>SPACES[k].type==='railroad'&&G.props[k].owner===prop.owner&&!G.props[k].mortgaged).length;
+    return [25,50,100,200][n-1]||25;
+  }
+  if (sp.type==='utility') {
+    const n = Object.keys(G.props).filter(k=>SPACES[k].type==='utility'&&G.props[k].owner===prop.owner).length;
+    return (G.dice[0]+G.dice[1]) * (n===2?10:4);
+  }
+  return 0;
+}
+
+// ═══════════════════════════════════════════════
+// JAIL
+// ═══════════════════════════════════════════════
+function goToJail() {
+  const p = G.players[G.cur];
+  p.pos=10; p.inJail=true; p.jailTurns=0;
+  G.doubleCount=0;
+  addLog(`${p.name} 被關入監獄！`, 'danger');
+  refreshCells(); renderPlayerCards();
+  G.phase='action'; updateButtons();
+  if (p.isAI) setTimeout(()=>{ if(G.phase==='action') endTurn(); },700);
+}
+
+function payJailFine() {
+  const p = G.players[G.cur];
+  if (!p.inJail) return;
+  p.money-=50; p.inJail=false; p.jailTurns=0;
+  addLog(`${p.name} 繳 $50 出獄`, 'info');
+  renderPlayerCards(); updateButtons();
+}
+
+// ═══════════════════════════════════════════════
+// BUY PROPERTY
+// ═══════════════════════════════════════════════
+function showBuyModal(sid) {
+  const sp = SPACES[sid];
+  const p  = G.players[G.cur];
+  const grp = sp.group ? SPACES.filter(s=>s.group===sp.group) : [];
+  const owned = grp.filter(s=>G.props[s.id]?.owner===G.cur).length;
+  const grpText = sp.group ? `（${GROUP_NAMES[sp.group]}：已擁有 ${owned}/${grp.length}）` : '';
+
+  openModal(`
+    <h2>${sp.emoji||'🏔️'} 購買地產</h2>
+    <p><strong>${sp.name}</strong> ${grpText}</p>
+    <p>${sp.desc}</p>
+    <div class="modal-amount">售價：$${sp.price}</div>
+    <p style="color:#aaa;font-size:.78rem">你的資金：$${p.money} → 購買後：$${p.money-sp.price}</p>
+    <div class="modal-actions">
+      <button class="btn btn-success" onclick="doBuy(${sid})">✅ 購買</button>
+      <button class="btn btn-secondary" onclick="doSkip()">❌ 放棄</button>
+    </div>`);
+}
+
+function doBuy(sid) {
+  const sp = SPACES[sid];
+  const p  = G.players[G.cur];
+  p.money -= sp.price;
+  G.props[sid] = {owner:G.cur, houses:0, mortgaged:false};
+  addLog(`${p.name} 購買【${sp.name}】-$${sp.price}`, 'success');
+  refreshCells(); renderPlayerCards(); closeModal();
+  finishLand(G.pendingIsDouble);
+}
+
+function doSkip() {
+  addLog(`${G.players[G.cur].name} 放棄購買`, 'info');
+  closeModal();
+  finishLand(G.pendingIsDouble);
+}
+
+function aiDecideBuy(sid, isDouble) {
+  const sp = SPACES[sid];
+  const p  = G.players[G.cur];
+  // AI buys if can afford and keeps at least $200 buffer
+  if (p.money - sp.price >= 150) {
+    p.money -= sp.price;
+    G.props[sid] = {owner:G.cur, houses:0, mortgaged:false};
+    addLog(`${p.name} 購買【${sp.name}】-$${sp.price}`, 'success');
+    refreshCells(); renderPlayerCards();
+  } else {
+    addLog(`${p.name} 資金有限，放棄購買【${sp.name}】`, 'info');
+  }
+  finishLand(isDouble);
+}
+
+// ═══════════════════════════════════════════════
+// BUILD / MORTGAGE
+// ═══════════════════════════════════════════════
+function showBuildMenu() {
+  const p = G.players[G.cur];
+  const myProps = Object.entries(G.props)
+    .filter(([sid,pr])=>pr.owner===G.cur && SPACES[sid].type==='property')
+    .map(([sid,pr])=>({sid:+sid, pr, sp:SPACES[sid]}));
+
+  const mortgaged = Object.entries(G.props)
+    .filter(([sid,pr])=>pr.owner===G.cur && pr.mortgaged)
+    .map(([sid,pr])=>({sid:+sid, pr, sp:SPACES[sid]}));
+
+  // Buildable = own entire group, not mortgaged
+  const buildable = myProps.filter(({sid,sp})=>{
+    const grp = SPACES.filter(s=>s.group===sp.group);
+    return grp.every(s=>G.props[s.id]?.owner===G.cur&&!G.props[s.id]?.mortgaged);
+  });
+
+  let rows = '';
+
+  if (buildable.length) {
+    rows += '<div style="font-size:.8rem;color:#f5af19;margin-bottom:6px">🏠 建造（需持有完整色組）</div>';
+    rows += buildable.map(({sid,pr,sp})=>{
+      const bld = pr.houses===5?'🏨旅館':pr.houses>0?`🏠×${pr.houses}`:'空地';
+      const canB = pr.houses<5 && p.money>=sp.hc;
+      const lbl  = pr.houses===4?'升旅館':'建房子';
+      return `<div style="display:flex;align-items:center;gap:7px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.07)">
+        <div style="flex:1;font-size:.82rem">${sp.name}<span style="color:#aaa;font-size:.7rem"> (${bld})</span></div>
+        <div style="font-size:.75rem;color:#aaa">$${sp.hc}</div>
+        ${canB?`<button class="btn btn-success" style="width:75px;padding:4px;font-size:.72rem" onclick="doBuild(${sid})">+${lbl}</button>`
+               :`<button class="btn btn-secondary" style="width:75px;padding:4px;font-size:.72rem" disabled>${pr.houses===5?'已滿':'資金不足'}</button>`}
+      </div>`;
+    }).join('');
+  }
+
+  if (myProps.length) {
+    rows += '<div style="font-size:.8rem;color:#f5af19;margin:10px 0 6px">🏦 抵押地產（取得售價 50%）</div>';
+    rows += myProps.filter(({pr})=>!pr.mortgaged&&pr.houses===0).map(({sid,pr,sp})=>`
+      <div style="display:flex;align-items:center;gap:7px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.07)">
+        <div style="flex:1;font-size:.82rem">${sp.name}</div>
+        <div style="font-size:.75rem;color:#aaa">+$${Math.floor(sp.price/2)}</div>
+        <button class="btn btn-warning" style="width:75px;padding:4px;font-size:.72rem" onclick="doMortgage(${sid})">抵押</button>
+      </div>`).join('');
+  }
+
+  if (mortgaged.length) {
+    rows += '<div style="font-size:.8rem;color:#f5af19;margin:10px 0 6px">♻️ 贖回抵押（支付售價 55%）</div>';
+    rows += mortgaged.map(({sid,pr,sp})=>{
+      const cost = Math.ceil(sp.price*0.55);
+      return `<div style="display:flex;align-items:center;gap:7px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.07)">
+        <div style="flex:1;font-size:.82rem">${sp.name}</div>
+        <div style="font-size:.75rem;color:#aaa">-$${cost}</div>
+        ${p.money>=cost?`<button class="btn btn-info" style="width:75px;padding:4px;font-size:.72rem" onclick="doUnmortgage(${sid})">贖回</button>`
+                       :`<button class="btn btn-secondary" style="width:75px;padding:4px;font-size:.72rem" disabled>資金不足</button>`}
+      </div>`;
+    }).join('');
+  }
+
+  if (!rows) rows = '<div style="color:#aaa;font-size:.85rem">暫無可操作的地產</div>';
+
+  openModal(`
+    <h2>🏠 建造 & 抵押管理</h2>
+    <p>你的資金：<strong>$${p.money}</strong></p>
+    ${rows}
+    <div class="modal-actions"><button class="btn btn-secondary" onclick="closeModal()">完成</button></div>`);
+}
+
+function doBuild(sid) {
+  const p=G.players[G.cur], pr=G.props[sid], sp=SPACES[sid];
+  if (p.money<sp.hc||pr.houses>=5) return;
+  p.money-=sp.hc; pr.houses++;
+  const lbl=pr.houses===5?'旅館':`第${pr.houses}棟房子`;
+  addLog(`${p.name} 在【${sp.name}】建造${lbl}！`, 'success');
+  refreshCells(); renderPlayerCards(); closeModal(); showBuildMenu();
+}
+
+function doMortgage(sid) {
+  const p=G.players[G.cur], pr=G.props[sid], sp=SPACES[sid];
+  pr.mortgaged=true; p.money+=Math.floor(sp.price/2);
+  addLog(`${p.name} 抵押【${sp.name}】，獲得 $${Math.floor(sp.price/2)}`, 'warning');
+  refreshCells(); renderPlayerCards(); closeModal(); showBuildMenu();
+}
+
+function doUnmortgage(sid) {
+  const p=G.players[G.cur], pr=G.props[sid], sp=SPACES[sid];
+  const cost=Math.ceil(sp.price*0.55);
+  if(p.money<cost) return;
+  pr.mortgaged=false; p.money-=cost;
+  addLog(`${p.name} 贖回【${sp.name}】，支付 $${cost}`, 'success');
+  refreshCells(); renderPlayerCards(); closeModal(); showBuildMenu();
+}
+
+// ═══════════════════════════════════════════════
+// TRADE
+// ═══════════════════════════════════════════════
+function showTradeMenu() {
+  const others = G.players.map((p,i)=>({p,i})).filter(({p,i})=>i!==G.cur&&!p.bankrupt);
+  if (!others.length) return;
+  G.tradeTarget=-1; G.tradeMyProps=new Set(); G.tradeTheirProps=new Set();
+
+  let partnerOpts = others.map(({p,i})=>`<option value="${i}">${p.emoji} ${p.name}</option>`).join('');
+  openModal(`
+    <h2>🤝 發起交易</h2>
+    <p>選擇交易對象，然後選擇要交換的地產與金額。</p>
+    <div class="trade-section">
+      <h4>交易對象</h4>
+      <select id="trade-partner" class="trade-input" onchange="updateTradePartner()">${partnerOpts}</select>
+    </div>
+    <div id="trade-my-props" class="trade-section"><h4>${G.players[G.cur].name} 的提供</h4><div class="prop-chips" id="my-chips"></div><input id="trade-my-cash" class="trade-input" type="number" min="0" placeholder="額外支付金額 $0" value="0"/></div>
+    <div id="trade-their-props" class="trade-section"><h4 id="their-header">對方的提供</h4><div class="prop-chips" id="their-chips"></div><input id="trade-their-cash" class="trade-input" type="number" min="0" placeholder="對方支付金額 $0" value="0"/></div>
+    <div class="modal-actions">
+      <button class="btn btn-success" onclick="executeTrade()">✅ 提議交易</button>
+      <button class="btn btn-secondary" onclick="closeModal()">取消</button>
+    </div>`);
+  updateTradePartner();
+}
+
+function updateTradePartner() {
+  const sel = document.getElementById('trade-partner');
+  G.tradeTarget = +sel.value;
+  G.tradeMyProps.clear(); G.tradeTheirProps.clear();
+  const me = G.players[G.cur];
+  const them = G.players[G.tradeTarget];
+  document.getElementById('their-header').textContent = `${them.name} 的提供`;
+
+  const myProps = Object.entries(G.props)
+    .filter(([sid,pr])=>pr.owner===G.cur&&!pr.mortgaged&&pr.houses===0)
+    .map(([sid])=>({sid:+sid,sp:SPACES[sid]}));
+  const theirProps = Object.entries(G.props)
+    .filter(([sid,pr])=>pr.owner===G.tradeTarget&&!pr.mortgaged&&pr.houses===0)
+    .map(([sid])=>({sid:+sid,sp:SPACES[sid]}));
+
+  document.getElementById('my-chips').innerHTML = myProps.map(({sid,sp})=>
+    `<div class="prop-chip" id="myc-${sid}" onclick="toggleTradeChip('my',${sid})">${sp.name}</div>`).join('')||'<span style="color:#aaa;font-size:.75rem">無可交易地產</span>';
+  document.getElementById('their-chips').innerHTML = theirProps.map(({sid,sp})=>
+    `<div class="prop-chip" id="thc-${sid}" onclick="toggleTradeChip('their',${sid})">${sp.name}</div>`).join('')||'<span style="color:#aaa;font-size:.75rem">對方無可交易地產</span>';
+}
+
+function toggleTradeChip(who, sid) {
+  const set = who==='my' ? G.tradeMyProps : G.tradeTheirProps;
+  const el = document.getElementById(`${who==='my'?'my':'th'}c-${sid}`);
+  if (set.has(sid)) { set.delete(sid); el.classList.remove('selected'); }
+  else { set.add(sid); el.classList.add('selected'); }
+}
+
+function executeTrade() {
+  const me = G.players[G.cur];
+  const them = G.players[G.tradeTarget];
+  const myCash = +(document.getElementById('trade-my-cash').value)||0;
+  const theirCash = +(document.getElementById('trade-their-cash').value)||0;
+
+  if (myCash > me.money) { alert('你的現金不足！'); return; }
+  if (theirCash > them.money) { alert('對方現金不足！'); return; }
+
+  // Transfer props
+  G.tradeMyProps.forEach(sid => { G.props[sid].owner = G.tradeTarget; });
+  G.tradeTheirProps.forEach(sid => { G.props[sid].owner = G.cur; });
+  // Transfer cash
+  me.money   += theirCash - myCash;
+  them.money += myCash   - theirCash;
+
+  const myPropNames   = [...G.tradeMyProps].map(s=>SPACES[s].name).join('、')||'無';
+  const theirPropNames= [...G.tradeTheirProps].map(s=>SPACES[s].name).join('、')||'無';
+  addLog(`${me.name} 與 ${them.name} 完成交易！`, 'success');
+  addLog(`${me.name} 提供：${myPropNames}${myCash?` + $${myCash}`:''}`, 'info');
+  addLog(`${them.name} 提供：${theirPropNames}${theirCash?` + $${theirCash}`:''}`, 'info');
+
+  refreshCells(); renderPlayerCards(); closeModal();
+}
+
+// ═══════════════════════════════════════════════
+// CARDS
+// ═══════════════════════════════════════════════
+function drawCard(type, isDouble) {
+  const deck  = type==='chance' ? CHANCE_CARDS : COMMUNITY_CARDS;
+  const idx   = type==='chance' ? G.chanceIdx++ : G.communityIdx++;
+  const card  = deck[idx % deck.length];
+  const label = type==='chance' ? '機會卡 ❓' : '社區胸卡 📦';
+  const p = G.players[G.cur];
+  G.pendingIsDouble = isDouble;
+
+  let effectText='', previewUpdate=true;
+
+  if (card.type==='gain') {
+    p.money+=card.amount; effectText=`獲得 +$${card.amount}`;
+    addLog(`${p.name}【${label}】${card.text} $${card.amount}`, 'success');
+  } else if (card.type==='lose') {
+    p.money-=card.amount; effectText=`支付 -$${card.amount}`;
+    addLog(`${p.name}【${label}】${card.text} $${card.amount}`, 'danger');
+    if (p.money<0) { renderPlayerCards(); openCardModal(label, card, effectText, ()=>handleBankruptcy(G.cur,-1)); return; }
+  } else if (card.type==='collect_from_all') {
+    let total=0;
+    G.players.forEach((o,i)=>{ if(i!==G.cur&&!o.bankrupt){ const pay=Math.min(card.amount,o.money); o.money-=pay; p.money+=pay; total+=pay; } });
+    effectText=`向每人收 $${card.amount}，共 +$${total}`;
+    addLog(`${p.name}【${label}】${card.text} $${card.amount}，共收 $${total}`, 'success');
+  } else if (card.type==='goto') {
+    previewUpdate=false; effectText=`前往 ${SPACES[card.target].name}`;
+    addLog(`${p.name}【${label}】${card.text}`, 'info');
+    openCardModal(label, card, effectText, ()=>{
+      closeModal();
+      if (card.target <= p.pos && !(card.target===0&&p.pos===0)) { p.money+=200; addLog(`${p.name} 途經出發點，收 $200`, 'success'); }
+      p.pos=card.target; refreshCells(); renderPlayerCards();
+      setTimeout(()=>landOn(card.target), 400);
+    });
+    return;
+  } else if (card.type==='jail') {
+    previewUpdate=false; effectText='前往監獄！';
+    addLog(`${p.name}【${label}】${card.text}`, 'danger');
+    openCardModal(label, card, effectText, ()=>{ closeModal(); goToJail(); });
+    return;
+  } else if (card.type==='move') {
+    previewUpdate=false; effectText=`移動 ${card.steps} 格`;
+    addLog(`${p.name}【${label}】${card.text}`, 'info');
+    openCardModal(label, card, effectText, ()=>{
+      closeModal();
+      const newPos=(p.pos+card.steps+40)%40;
+      p.pos=newPos; refreshCells(); renderPlayerCards();
+      setTimeout(()=>landOn(newPos), 400);
+    });
+    return;
+  }
+
+  if (previewUpdate) renderPlayerCards();
+  openCardModal(label, card, effectText, ()=>{ closeModal(); finishLand(isDouble); });
+}
+
+function openCardModal(label, card, effectText, onOk) {
+  openModal(`
+    <h2>${label}</h2>
+    <div class="card-display">
+      <div class="card-type">${label}</div>
+      <div class="card-text">${card.text}</div>
+      <div class="card-effect">${effectText}</div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" id="card-ok-btn">確認</button>
+    </div>`);
+  document.getElementById('card-ok-btn').onclick = onOk;
+  if (G.players[G.cur].isAI) setTimeout(()=>{ document.getElementById('card-ok-btn')?.click(); }, 800);
+}
+
+// ═══════════════════════════════════════════════
+// TRIVIA
+// ═══════════════════════════════════════════════
+function showTrivia(isDouble) {
+  let pool = TRIVIA.filter((_,i)=>!G.triviaUsed.has(i));
+  if (!pool.length) { G.triviaUsed.clear(); pool=TRIVIA; }
+  const idx  = Math.floor(Math.random()*pool.length);
+  const q    = pool[idx];
+  const qIdx = TRIVIA.indexOf(q);
+  G.triviaUsed.add(qIdx);
+  G.pendingIsDouble = isDouble;
+
+  const opts = q.opts.map((o,i)=>`<div class="trivia-option" id="to-${i}" onclick="answerTrivia(${i},${q.ans},'${q.fact.replace(/'/g,"\\'")}',${isDouble})">${String.fromCharCode(65+i)}. ${o}</div>`).join('');
+
+  openModal(`
+    <h2>🪨 地質知識問答</h2>
+    <p>答對獲得 <strong>$100</strong> 獎勵！免費停車是最好的學習機會～</p>
+    <p style="font-size:.95rem;color:#eee;margin:8px 0">${q.q}</p>
+    <div class="trivia-options">${opts}</div>
+    <div id="trivia-fact" style="display:none;background:rgba(255,255,255,.05);border-radius:8px;padding:8px;margin-top:8px;font-size:.8rem;color:#aaa"></div>
+    <div class="modal-actions" id="trivia-next" style="display:none">
+      <button class="btn btn-primary" id="trivia-cont">繼續</button>
+    </div>`);
+
+  if (G.players[G.cur].isAI) {
+    setTimeout(()=>{
+      const btn = document.getElementById(`to-${q.ans}`);
+      if(btn) btn.click();
+    }, 700);
+  }
+}
+
+function answerTrivia(chosen, correct, fact, isDouble) {
+  document.querySelectorAll('.trivia-option').forEach((el,i)=>{
+    el.style.pointerEvents='none';
+    if (i===correct) el.classList.add('correct');
+    else if (i===chosen) el.classList.add('wrong');
+  });
+  const p = G.players[G.cur];
+  const win = chosen===correct;
+  if (win) { p.money+=100; addLog(`${p.name} 答對問答，獲得 $100！`, 'success'); renderPlayerCards(); }
+  else      addLog(`${p.name} 答錯問答，正確答案是 ${String.fromCharCode(65+correct)}`, 'warning');
+
+  document.getElementById('trivia-fact').style.display='block';
+  document.getElementById('trivia-fact').textContent = `📚 ${fact}`;
+  document.getElementById('trivia-next').style.display='flex';
+  document.getElementById('trivia-cont').onclick=()=>{ closeModal(); finishLand(isDouble); };
+  if (G.players[G.cur].isAI) setTimeout(()=>{ document.getElementById('trivia-cont')?.click(); },1000);
+}
+
+// ═══════════════════════════════════════════════
+// BANKRUPTCY
+// ═══════════════════════════════════════════════
+function handleBankruptcy(idx, creditorIdx) {
+  const p = G.players[idx];
+  p.bankrupt = true;
+  addLog(`💀 ${p.name} 宣告破產！`, 'danger');
+
+  Object.entries(G.props).forEach(([sid,prop])=>{
+    if (prop.owner!==idx) return;
+    if (creditorIdx>=0) { prop.owner=creditorIdx; prop.houses=0; prop.mortgaged=false;
+      addLog(`【${SPACES[sid].name}】轉讓給 ${G.players[creditorIdx].name}`, 'info');
+    } else delete G.props[sid];
+  });
+  if (creditorIdx>=0) G.players[creditorIdx].money += Math.max(0,p.money);
+  p.money=0;
+  refreshCells(); renderPlayerCards(); closeModal();
+
+  const alive = G.players.filter(p=>!p.bankrupt);
+  if (alive.length===1) { showWinScreen(alive[0]); return; }
+  G.phase='action'; updateButtons();
+  setTimeout(()=>endTurn(),600);
+}
+
+// ═══════════════════════════════════════════════
+// WIN
+// ═══════════════════════════════════════════════
+function showWinScreen(winner) {
+  G.over=true;
+  const ranked = [...G.players].sort((a,b)=>netWorth(G.players.indexOf(b))-netWorth(G.players.indexOf(a)));
+  const scoreRows = ranked.map((p,rank)=>{
+    const i=G.players.indexOf(p);
+    return `<div class="score-row"><span>${rank+1}. ${p.emoji} ${p.name}${p.bankrupt?' 💀':''}</span><span>淨值 $${netWorth(i)}</span></div>`;
+  }).join('');
+  openModal(`
+    <div class="win-screen">
+      <div style="font-size:3rem">${winner.emoji}</div>
+      <h2>🎉 ${winner.name} 獲勝！</h2>
+      <p>恭喜成為最富有的地質學家！</p>
+      <div class="scoreboard">${scoreRows}</div>
+      <button class="btn btn-primary" onclick="location.reload()">🔄 再玩一次</button>
+    </div>`);
+  updateButtons();
+}
+
+// ═══════════════════════════════════════════════
+// END TURN
+// ═══════════════════════════════════════════════
+function endTurn() {
+  if (G.phase!=='action'||G.over) return;
+  let next = (G.cur+1) % G.players.length, tries=0;
+  while (G.players[next].bankrupt && tries<G.players.length) { next=(next+1)%G.players.length; tries++; }
+  G.cur=next; G.phase='roll'; G.doubleCount=0;
+  addLog(`─── ${G.players[G.cur].name} 的回合 ───`, 'info');
+  renderUI();
+  showSpaceInfo(G.players[G.cur].pos);
+  if (G.players[G.cur].isAI && !G.players[G.cur].bankrupt) setTimeout(aiTurn, 700);
+}
+
+// ═══════════════════════════════════════════════
+// AI
+// ═══════════════════════════════════════════════
+function aiTurn() {
+  if (G.over) return;
+  const p = G.players[G.cur];
+  if (!p.isAI||p.bankrupt) return;
+  if (G.phase==='roll') {
+    if (p.inJail && p.jailTurns>=1 && p.money>300) { payJailFine(); renderPlayerCards(); }
+    setTimeout(rollDice, 500);
+  } else if (G.phase==='action') {
+    aiTryBuild();
+    setTimeout(()=>{ if(G.phase==='action') endTurn(); },700);
+  }
+}
+
+function aiTryBuild() {
+  const p=G.players[G.cur];
+  const entries=Object.entries(G.props).filter(([sid,pr])=>pr.owner===G.cur&&!pr.mortgaged&&SPACES[sid].type==='property');
+  for (const [sid,pr] of entries) {
+    const sp=SPACES[sid];
+    const grp=SPACES.filter(s=>s.group===sp.group);
+    if (!grp.every(s=>G.props[s.id]?.owner===G.cur&&!G.props[s.id]?.mortgaged)) continue;
+    if (pr.houses<5 && p.money-sp.hc>400) {
+      p.money-=sp.hc; pr.houses++;
+      addLog(`${p.name} 在【${sp.name}】建造${pr.houses===5?'旅館':'房子'}`, 'success');
+      refreshCells(); renderPlayerCards(); return;
+    }
+  }
+  // Mortgage if near bankruptcy
+  if (p.money < 100) {
+    const mortgageable = Object.entries(G.props).filter(([sid,pr])=>pr.owner===G.cur&&!pr.mortgaged&&pr.houses===0);
+    if (mortgageable.length) {
+      const [sid,pr]=mortgageable[0];
+      const sp=SPACES[sid]; pr.mortgaged=true; p.money+=Math.floor(sp.price/2);
+      addLog(`${p.name} 緊急抵押【${sp.name}】`, 'warning');
+      refreshCells(); renderPlayerCards();
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════
+// MODAL
+// ═══════════════════════════════════════════════
+function openModal(html) {
+  document.getElementById('modal-content').innerHTML = html;
+  document.getElementById('modal').style.display = 'flex';
+}
+function closeModal() { document.getElementById('modal').style.display='none'; }
+
+// ═══════════════════════════════════════════════
+// LOG
+// ═══════════════════════════════════════════════
+function addLog(text, type='info') {
+  const list=document.getElementById('log-list');
+  const el=document.createElement('div');
+  el.className=`log-entry ${type}`;
+  el.textContent=text;
+  list.prepend(el);
+  while(list.children.length>40) list.removeChild(list.lastChild);
+}
+
+// ── INIT ──
+setPC(2);
+</script>
+</body>
+</html>
