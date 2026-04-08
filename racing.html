@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>極速賽車</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#111;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;font-family:"Microsoft JhengHei",Arial,sans-serif;color:#fff;overflow:hidden}
+canvas{display:block;border:2px solid #333;border-radius:4px}
+#ui{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none}
+#hud{position:absolute;top:10px;left:10px;background:rgba(0,0,0,.65);border:1px solid #444;border-radius:10px;padding:12px 18px;min-width:160px;font-size:14px;line-height:2}
+#hud span{color:#f5af19;font-weight:bold;font-size:16px}
+#speedometer{position:absolute;bottom:20px;right:20px;background:rgba(0,0,0,.65);border:1px solid #444;border-radius:50%;width:110px;height:110px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:13px}
+#speedometer .spd{font-size:28px;font-weight:bold;color:#f5af19;line-height:1}
+#overlay{position:absolute;top:0;left:0;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:all;background:rgba(0,0,0,.82)}
+#overlay h1{font-size:3rem;margin-bottom:8px;background:linear-gradient(135deg,#f5af19,#f12711);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+#overlay p{color:#aaa;margin-bottom:30px;font-size:1rem}
+.btn{padding:14px 40px;font-size:1.1rem;font-weight:bold;border:none;border-radius:10px;cursor:pointer;transition:.15s;background:linear-gradient(135deg,#f5af19,#f12711);color:#fff;margin:6px}
+.btn:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(241,39,17,.4)}
+#result-list{list-style:none;margin:14px 0 24px;width:320px}
+#result-list li{display:flex;justify-content:space-between;align-items:center;padding:8px 14px;margin:4px 0;background:rgba(255,255,255,.06);border-radius:8px;font-size:.95rem}
+#result-list li:first-child{background:rgba(245,175,25,.2);border:1px solid rgba(245,175,25,.4)}
+.medal{font-size:1.2rem;margin-right:8px}
+.controls-hint{position:absolute;bottom:20px;left:20px;background:rgba(0,0,0,.6);border:1px solid #333;border-radius:8px;padding:8px 14px;font-size:12px;color:#888;line-height:1.8}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div id="hud">
+    <div>圈數：<span id="h-lap">0/3</span></div>
+    <div>名次：<span id="h-pos">-</span></div>
+    <div>時間：<span id="h-time">0:00.000</span></div>
+  </div>
+  <div id="speedometer"><div class="spd" id="h-spd">0</div><div>km/h</div></div>
+  <div class="controls-hint" id="ctrl-hint">↑/W 加速 &nbsp; ↓/S 煞車<br>←/A 左轉 &nbsp; →/D 右轉</div>
+</div>
+<div id="overlay">
+  <div id="screen-start">
+    <h1>極速賽車</h1>
+    <p>完成 3 圈，贏得勝利！</p>
+    <button class="btn" onclick="game.start()">開始比賽</button>
+  </div>
+  <div id="screen-result" style="display:none;text-align:center">
+    <h1 id="result-title">比賽結束</h1>
+    <ul id="result-list"></ul>
+    <button class="btn" onclick="game.restart()">再賽一場</button>
+  </div>
+</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const W = canvas.width = 900;
+const H = canvas.height = 600;
+const LAPS = 3;
+
+class Track {
+  constructor() {
+    this.cx = W/2; this.cy = H/2;
+    this.rx = 350; this.ry = 215;
+    this.road = 70;
+    this.checkpoints = this.buildCheckpoints();
+  }
+  pathPoint(t) {
+    return { x: this.cx + this.rx*Math.cos(t), y: this.cy + this.ry*Math.sin(t) };
+  }
+  nearestT(x, y) {
+    let best = 0, bestD = Infinity;
+    for (let i = 0; i < 64; i++) {
+      const t = (i/64)*Math.PI*2;
+      const p = this.pathPoint(t);
+      const d = (p.x-x)**2 + (p.y-y)**2;
+      if (d < bestD) { bestD = d; best = t; }
+    }
+    return best;
+  }
+  distFromPath(x, y) {
+    const t = this.nearestT(x, y);
+    const p = this.pathPoint(t);
+    return Math.hypot(x-p.x, y-p.y);
+  }
+  onTrack(x, y) { return this.distFromPath(x, y) < this.road - 6; }
+  buildCheckpoints() {
+    const N = 8, cps = [];
+    for (let i = 0; i < N; i++) {
+      const t = (i/N)*Math.PI*2;
+      cps.push({ t, p: this.pathPoint(t) });
+    }
+    return cps;
+  }
+  draw(ctx) {
+    ctx.fillStyle = '#1a3a1a'; ctx.fillRect(0,0,W,H);
+    // Outer border
+    ctx.beginPath();
+    ctx.ellipse(this.cx,this.cy,this.rx+this.road+4,this.ry+this.road+4,0,0,Math.PI*2);
+    ctx.fillStyle='#555'; ctx.fill();
+    // Road
+    ctx.beginPath();
+    ctx.ellipse(this.cx,this.cy,this.rx+this.road,this.ry+this.road,0,0,Math.PI*2);
+    ctx.fillStyle='#3a3a3a'; ctx.fill();
+    // Inner grass
+    ctx.beginPath();
+    ctx.ellipse(this.cx,this.cy,this.rx-this.road,this.ry-this.road,0,0,Math.PI*2);
+    ctx.fillStyle='#1a3a1a'; ctx.fill();
+    // Inner border
+    ctx.beginPath();
+    ctx.ellipse(this.cx,this.cy,this.rx-this.road,this.ry-this.road,0,0,Math.PI*2);
+    ctx.strokeStyle='#555'; ctx.lineWidth=4; ctx.stroke();
+    // Center dashes
+    ctx.save(); ctx.setLineDash([18,12]);
+    ctx.strokeStyle='rgba(255,255,255,.2)'; ctx.lineWidth=2;
+    ctx.beginPath();
+    ctx.ellipse(this.cx,this.cy,this.rx,this.ry,0,0,Math.PI*2);
+    ctx.stroke(); ctx.restore();
+    // Curbs
+    this.drawCurbs(ctx);
+    // Start/finish line
+    const sf = this.pathPoint(0);
+    ctx.save(); ctx.translate(sf.x, sf.y);
+    const seg = (this.road*2)/8;
+    for (let i=0;i<8;i++) {
+      ctx.fillStyle = i%2===0 ? '#fff' : '#111';
+      ctx.fillRect(-9, -this.road+i*seg, 18, seg);
+    }
+    ctx.restore();
+  }
+  drawCurbs(ctx) {
+    const N = 44;
+    [this.rx+this.road+2, this.rx-this.road-2].forEach(r => {
+      // approximate ellipse curb with segments
+      for (let i=0;i<N;i++) {
+        const t0=(i/N)*Math.PI*2, t1=((i+0.5)/N)*Math.PI*2;
+        // scale y factor
+        const ry = r===this.rx+this.road+2 ? this.ry+this.road+2 : this.ry-this.road-2;
+        const rx2 = r;
+        const x0=this.cx+rx2*Math.cos(t0), y0=this.cy+ry*Math.sin(t0);
+        const x1=this.cx+rx2*Math.cos(t1), y1=this.cy+ry*Math.sin(t1);
+        ctx.beginPath(); ctx.moveTo(x0,y0); ctx.lineTo(x1,y1);
+        ctx.strokeStyle=i%2===0?'#e74c3c':'#fff'; ctx.lineWidth=7; ctx.stroke();
+      }
+    });
+  }
+}
+
+class Car {
+  constructor(color,name,startT,isPlayer) {
+    this.color=color; this.name=name; this.isPlayer=isPlayer;
+    this.w=24; this.h=14;
+    const p=track.pathPoint(startT);
+    this.x=p.x; this.y=p.y;
+    const tang={x:-track.rx*Math.sin(startT),y:track.ry*Math.cos(startT)};
+    this.angle=Math.atan2(tang.y,tang.x);
+    this.speed=0;
+    this.maxSpeed=isPlayer?5.5:(4.3+Math.random()*1.0);
+    this.accel=0.11; this.brakeF=0.18; this.friction=0.972;
+    this.turnRate=0.054;
+    this.lap=0;
+    this.cpPassed=new Array(track.checkpoints.length).fill(false);
+    this.finished=false; this.finishTime=null; this.finishPos=0;
+    this.aiCpIdx=0;
+    this.prevNearSF=false;
+  }
+  update(keys) {
+    if (this.finished) { this.speed*=0.94; this._move(); return; }
+    if (this.isPlayer) {
+      if (keys['ArrowUp']||keys['w']||keys['W']) this.speed+=this.accel;
+      if (keys['ArrowDown']||keys['s']||keys['S']) this.speed-=this.brakeF;
+      const tf=Math.max(0.25,1-Math.abs(this.speed)/this.maxSpeed*0.55);
+      if (keys['ArrowLeft']||keys['a']||keys['A']) this.angle-=this.turnRate*tf*(this.speed>=0?1:-1);
+      if (keys['ArrowRight']||keys['d']||keys['D']) this.angle+=this.turnRate*tf*(this.speed>=0?1:-1);
+    } else {
+      this._aiUpdate();
+    }
+    this.speed=Math.max(-1.5,Math.min(this.maxSpeed,this.speed));
+    this.speed*=this.friction;
+    this._move();
+    this._checkProgress();
+  }
+  _aiUpdate() {
+    const cps=track.checkpoints;
+    const tgt=cps[this.aiCpIdx%cps.length].p;
+    const dx=tgt.x-this.x, dy=tgt.y-this.y;
+    if (Math.hypot(dx,dy)<60) this.aiCpIdx=(this.aiCpIdx+1)%cps.length;
+    const tgtAngle=Math.atan2(dy,dx);
+    let diff=tgtAngle-this.angle;
+    while(diff>Math.PI) diff-=Math.PI*2;
+    while(diff<-Math.PI) diff+=Math.PI*2;
+    this.angle+=Math.sign(diff)*Math.min(Math.abs(diff),this.turnRate);
+    this.speed+=this.accel*0.85;
+  }
+  _move() {
+    const nx=this.x+Math.cos(this.angle)*this.speed;
+    const ny=this.y+Math.sin(this.angle)*this.speed;
+    if (!track.onTrack(nx,ny)) {
+      this.speed*=0.45;
+      this.angle+=(Math.random()-0.5)*0.25;
+    } else { this.x=nx; this.y=ny; }
+  }
+  _checkProgress() {
+    // Mark checkpoints
+    track.checkpoints.forEach((cp,i)=>{
+      if (!this.cpPassed[i] && Math.hypot(this.x-cp.p.x,this.y-cp.p.y)<65)
+        this.cpPassed[i]=true;
+    });
+    // Detect crossing start/finish (right side ellipse, t=0)
+    const sf=track.pathPoint(0);
+    const nearSF=Math.abs(this.x-sf.x)<22&&Math.abs(this.y-sf.y)<track.road;
+    if (nearSF&&!this.prevNearSF) {
+      if (this.cpPassed.every(v=>v)) {
+        this.lap++;
+        this.cpPassed.fill(false);
+        if (this.lap>LAPS&&!this.finished) {
+          this.finished=true; this.finishTime=game.elapsed;
+        }
+      }
+    }
+    this.prevNearSF=nearSF;
+  }
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x,this.y);
+    ctx.rotate(this.angle);
+    ctx.fillStyle='rgba(0,0,0,.3)';
+    ctx.fillRect(-this.w/2+2,-this.h/2+2,this.w,this.h);
+    ctx.fillStyle=this.color;
+    ctx.beginPath();
+    ctx.roundRect(-this.w/2,-this.h/2,this.w,this.h,4);
+    ctx.fill();
+    ctx.fillStyle='rgba(200,235,255,.65)';
+    ctx.fillRect(this.w/2-9,-this.h/2+2,7,this.h-4);
+    ctx.fillStyle='#ffe8a0';
+    ctx.fillRect(this.w/2-2,-this.h/2+2,3,3);
+    ctx.fillRect(this.w/2-2,this.h/2-5,3,3);
+    if (this.isPlayer) {
+      ctx.fillStyle='rgba(255,255,255,.8)';
+      ctx.beginPath();
+      ctx.moveTo(0,-this.h/2-7);
+      ctx.lineTo(-5,-this.h/2-1);
+      ctx.lineTo(5,-this.h/2-1);
+      ctx.closePath(); ctx.fill();
+    }
+    ctx.restore();
+  }
+}
+
+const track = new Track();
+const keys = {};
+let game;
+
+class Game {
+  constructor() {
+    this.state='idle'; this.elapsed=0; this.finishCount=0;
+    this.cars=[
+      new Car('#e74c3c','玩家',-0.05,true),
+      new Car('#3498db','藍車', 0.05,false),
+      new Car('#2ecc71','綠車', 0.10,false),
+      new Car('#f1c40f','黃車', 0.15,false),
+    ];
+    this.rafId=null; this.lastTime=0;
+  }
+  start() {
+    document.getElementById('overlay').style.display='none';
+    this.state='racing'; this.elapsed=0; this.finishCount=0;
+    this.lastTime=performance.now();
+    this._loop(this.lastTime);
+  }
+  restart() {
+    cancelAnimationFrame(this.rafId);
+    game=new Game();
+    document.getElementById('screen-start').style.display='block';
+    document.getElementById('screen-result').style.display='none';
+    document.getElementById('overlay').style.display='flex';
+    document.getElementById('h-lap').textContent='0/3';
+    document.getElementById('h-pos').textContent='-';
+    document.getElementById('h-time').textContent='0:00.000';
+    document.getElementById('h-spd').textContent='0';
+  }
+  _loop(now) {
+    const dt=Math.min((now-this.lastTime)/16.667,3);
+    this.lastTime=now;
+    if (this.state==='racing') this.elapsed+=dt*16.667;
+    this._update(dt);
+    this._render();
+    this.rafId=requestAnimationFrame(t=>this._loop(t));
+  }
+  _update(dt) {
+    if (this.state!=='racing') return;
+    this.cars.forEach(c=>c.update(keys));
+    this.cars.forEach(c=>{
+      if (c.finished&&c.finishPos===0) { this.finishCount++; c.finishPos=this.finishCount; }
+    });
+    const player=this.cars[0];
+    if (player.finished&&this.state==='racing') {
+      this.state='finished';
+      setTimeout(()=>this._showResult(),1400);
+    }
+    // HUD
+    const lapShow=Math.min(player.lap,LAPS);
+    document.getElementById('h-lap').textContent=lapShow+'/'+LAPS;
+    document.getElementById('h-spd').textContent=Math.round(Math.abs(player.speed)*28);
+    const sorted=this._sorted();
+    const pidx=sorted.indexOf(player);
+    document.getElementById('h-pos').textContent=['1st','2nd','3rd','4th'][pidx]||'-';
+    document.getElementById('h-time').textContent=this._fmt(this.elapsed);
+  }
+  _sorted() {
+    return [...this.cars].sort((a,b)=>{
+      if (a.lap!==b.lap) return b.lap-a.lap;
+      return track.nearestT(b.x,b.y)-track.nearestT(a.x,a.y);
+    });
+  }
+  _fmt(ms) {
+    const s=Math.floor(ms/1000),m=Math.floor(s/60);
+    return m+':'+String(s%60).padStart(2,'0')+'.'+String(Math.floor(ms%1000)).padStart(3,'0');
+  }
+  _showResult() {
+    const ranked=[...this.cars].sort((a,b)=>
+      a.finishPos&&b.finishPos ? a.finishPos-b.finishPos : b.lap-a.lap
+    );
+    const medals=['🥇','🥈','🥉','🏁'];
+    const list=document.getElementById('result-list');
+    list.innerHTML='';
+    ranked.forEach((c,i)=>{
+      const li=document.createElement('li');
+      const t=c.finishTime?this._fmt(c.finishTime):'未完賽';
+      const medal=document.createElement('span');
+      medal.className='medal'; medal.textContent=medals[i]||'';
+      const nameSpan=document.createElement('span');
+      nameSpan.appendChild(medal); nameSpan.appendChild(document.createTextNode(c.name));
+      const timeSpan=document.createElement('span');
+      timeSpan.textContent=t;
+      li.appendChild(nameSpan); li.appendChild(timeSpan);
+      list.appendChild(li);
+    });
+    const pidx=ranked.indexOf(this.cars[0]);
+    const titles=['恭喜獲得冠軍！🏆','很好！第二名！','繼續努力！第三名','下次加油！第四名'];
+    document.getElementById('result-title').textContent=titles[pidx]||'比賽結束';
+    document.getElementById('screen-start').style.display='none';
+    document.getElementById('screen-result').style.display='block';
+    document.getElementById('overlay').style.display='flex';
+  }
+  _render() {
+    ctx.clearRect(0,0,W,H);
+    track.draw(ctx);
+    this.cars.forEach(c=>c.draw(ctx));
+    if (this.state==='finished') {
+      ctx.fillStyle='rgba(0,0,0,.45)';
+      ctx.fillRect(W/2-130,H/2-32,260,64);
+      ctx.fillStyle='#f5af19';
+      ctx.font='bold 30px "Microsoft JhengHei",Arial';
+      ctx.textAlign='center';
+      ctx.fillText('到達終點！',W/2,H/2+12);
+      ctx.textAlign='left';
+    }
+  }
+}
+
+game=new Game();
+window.addEventListener('keydown',e=>{
+  keys[e.key]=true;
+  if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
+});
+window.addEventListener('keyup',e=>{ keys[e.key]=false; });
+track.draw(ctx);
+game.cars.forEach(c=>c.draw(ctx));
+</script>
+</body>
+</html>
