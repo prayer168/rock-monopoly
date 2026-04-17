@@ -143,6 +143,7 @@ body { font-family: 'Microsoft JhengHei','Arial',sans-serif; background: linear-
 .btn-info    { background:linear-gradient(135deg,#3498db,#2980b9); color:#fff; }
 .btn-secondary { background:rgba(255,255,255,.1); color:#eee; border:1px solid rgba(255,255,255,.2); }
 .btn-purple  { background:linear-gradient(135deg,#9b59b6,#8e44ad); color:#fff; }
+.btn-obsidian { background:linear-gradient(135deg,#7c3aed,#4f46e5); color:#fff; }
 
 /* Log */
 .log-list { max-height:130px; overflow-y:auto; display:flex; flex-direction:column; gap:2px; }
@@ -1268,8 +1269,81 @@ function showWinScreen(winner) {
       <p>恭喜成為最富有的地質學家！</p>
       <div class="scoreboard">${scoreRows}</div>
       <button class="btn btn-primary" onclick="location.reload()">🔄 再玩一次</button>
+      <button class="btn btn-obsidian" onclick="exportToObsidian()">📥 匯出到 Obsidian</button>
     </div>`);
   updateButtons();
+}
+
+// ═══════════════════════════════════════════════
+// OBSIDIAN EXPORT
+// ═══════════════════════════════════════════════
+function exportToObsidian() {
+  const now = new Date();
+  const dateStr = now.toISOString().slice(0,10);
+  const timeStr = now.toTimeString().slice(0,5);
+  const ranked = [...G.players].sort((a,b)=>netWorth(G.players.indexOf(b))-netWorth(G.players.indexOf(a)));
+  const winner = ranked[0];
+
+  const propsByPlayer = G.players.map((_,i)=>
+    Object.entries(G.props)
+      .filter(([,pr])=>pr.owner===i)
+      .map(([sid,pr])=>{
+        const sp=SPACES[sid];
+        const bld = pr.mortgaged?'（已抵押）': pr.houses===5?'🏨旅館': pr.houses>0?`🏠×${pr.houses}`:'空地';
+        return `  - ${sp.emoji||'🪨'} ${sp.name} ${bld}`;
+      }).join('\n')
+  );
+
+  const logEntries = Array.from(document.querySelectorAll('#log-list .log-entry'))
+    .map(el=>el.textContent.trim())
+    .reverse()
+    .slice(0,50);
+
+  const rankingMd = ranked.map((p,rank)=>{
+    const i=G.players.indexOf(p);
+    const type=p.isAI?'AI':'人類';
+    const status=p.bankrupt?'💀 破產':'✅ 存活';
+    const props=propsByPlayer[i]||'  （無）';
+    return `### ${rank+1}. ${p.emoji} ${p.name} (${type})\n- 狀態：${status}\n- 現金：$${p.money}\n- 淨值：$${netWorth(i)}\n- 持有地產：\n${props||'  （無）'}`;
+  }).join('\n\n');
+
+  const logMd = logEntries.map(l=>`- ${l}`).join('\n');
+
+  const md = `---
+tags:
+  - 岩石大富翁
+  - 遊戲紀錄
+date: ${dateStr}
+time: ${timeStr}
+winner: "${winner.emoji} ${winner.name}"
+players: ${G.players.length}
+---
+
+# 🪨 岩石與礦物大富翁 — 遊戲紀錄
+
+**日期：** ${dateStr} ${timeStr}
+**優勝者：** ${winner.emoji} ${winner.name}
+
+---
+
+## 最終排名
+
+${rankingMd}
+
+---
+
+## 遊戲日誌（最後 50 則）
+
+${logMd}
+`;
+
+  const blob = new Blob([md], {type:'text/markdown;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href=url;
+  a.download=`岩石大富翁-${dateStr}.md`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 // ═══════════════════════════════════════════════
